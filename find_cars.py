@@ -15,9 +15,19 @@ def vehicle_events_env(d, sr, smooth_time=1.0, n_fft=256):
   """Identify vehicle-passing events in karongwe recordings.
   :args:
     d: np.array
-      input audio waveform
+      input audio waveform.
     sr: float
-      sampling rate of input
+      sampling rate of input.
+    smooth_time: float
+      duration in sec of the smoothing kernel applied to the envelope.
+    n_fft: int
+      length of the FFT used.
+
+  :returns:
+    env: 1D np.array
+      energy envelope indicative of events.
+    frame_rate: float
+      sample rate corresponding to env.
   """
   # Calculate spectrogram
   #n_fft = 256
@@ -52,8 +62,18 @@ def vehicle_find_peaks(env, frame_rate, peak_time_scale=1.0,
   """Pick peaks in detection envelope.
 
   :args:
+    env: 1D np.array
+      Energy envelope from which peaks are picked.
+    frame_rate: float
+      Sample rate for env.
+    peak_time_scale: float
+      The duration of the averaging and local-maximum windows used to pick
+      peaks are scaled by this factor.  Larger = peaks are further apart.
+    max_threshold: float
+      Peaks smaller than this factor times the global peak envelope are
+      ignored.
     ignore_time: float
-      optional "guard band": events this close to either end are ignored
+      Optional "guard band": events this close to either end are ignored.
   :returns:
     times: np.array
       times in seconds of detected events
@@ -130,8 +150,8 @@ def write_label_file(filename, starts, ends, labels):
   """Write a three-column label file."""
   with open(filename, "w") as f:
     # f.write("# Label file %s written at %s\n" % (filename, time.ctime()))
+    # Audacity doesn't like a header line in its label files.
     for start, end, label in izip(starts, ends, labels):
-      label = 'hit'
       f.write("%.3f\t%.3f\t%s\n" % (start, end, label))
 
 
