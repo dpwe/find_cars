@@ -9,6 +9,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import librosa
 
+import audio_read
+
 from itertools import izip
 
 def vehicle_events_env(d, sr, smooth_time=1.0, n_fft=256):
@@ -108,10 +110,10 @@ def vehicle_find_peaks(env, frame_rate, peak_time_scale=1.0,
 
 
 def events_for_file(filename, smooth_time=1.0, peak_time_scale=1.0,
-                    sensitivity=1.0, threshold=10.0, ignore_edge_time=20.0):
+                    sensitivity=1.0, threshold=10.0, ignore_edge_time=30.0):
   """ Return all the car events for a file, processing one chunk at a time """
   chunk_dur_sec = 1200.0
-  chunk_overlap_sec = min(120.0, 2.0*ignore_edge_time)
+  chunk_overlap_sec = max(120.0, 2.0*ignore_edge_time)
   current_base_sec = 0.0
   done = False
   sr = 16000
@@ -119,12 +121,17 @@ def events_for_file(filename, smooth_time=1.0, peak_time_scale=1.0,
   #ignore_edge_time = 20.0
   all_times = []
   all_peaks = []
+  d = np.zeros((0,))
+  file_object = audio_read.AudioReader(filename, sr=sr, channels=1)
   while not done:
     #print current_base_sec
-    d, sr = librosa.load(filename, sr=sr, offset=current_base_sec,
-                         duration=chunk_dur_sec)
+    #d, sr = librosa.load(filename, sr=sr, offset=current_base_sec,
+    #                     duration=chunk_dur_sec)
     #d, sr = audio_read.audio_read(filename, sr=sr, offset=current_base_sec,
     #                              duration=chunk_dur_sec)
+    old_d = d[-int(chunk_overlap_sec * sr):]
+    d, sr = file_object.read(chunk_dur_sec - len(old_d)/float(sr))
+    d = np.concatenate([old_d, d])
     print("Read %s @ time=%.1f ... %.1f" % (filename, current_base_sec,
                                             current_base_sec + len(d)/sr))
     if len(d) < np.floor(chunk_dur_sec*sr)-1:
@@ -182,7 +189,7 @@ def main(argv):
   parser.add_argument('--threshold', type=float, default=10.0,
                       help="Lower threshold allows absolutely quieter peaks "
                       "to count as events.")
-  parser.add_argument('--ignore_edge_time', type=float, default=20.0,
+  parser.add_argument('--ignore_edge_time', type=float, default=30.0,
                       help="Ignore this many seconds at start and end.")
 
   args = parser.parse_args()
