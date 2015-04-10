@@ -108,7 +108,7 @@ def vehicle_find_peaks(env, frame_rate, peak_time_scale=1.0,
 
 
 def events_for_file(filename, smooth_time=1.0, peak_time_scale=1.0,
-                    sensitivity=30.0, threshold=10.0, ignore_edge_time=20.0):
+                    sensitivity=1.0, threshold=10.0, ignore_edge_time=20.0):
   """ Return all the car events for a file, processing one chunk at a time """
   chunk_dur_sec = 1200.0
   chunk_overlap_sec = min(120.0, 2.0*ignore_edge_time)
@@ -176,7 +176,7 @@ def main(argv):
   parser.add_argument('--peak_time_scale', type=float, default=1.0,
                       help="Scale the peak picking time windows by this "
                       "factor.")
-  parser.add_argument('--sensitivity', type=float, default=30.0,
+  parser.add_argument('--sensitivity', type=float, default=1.0,
                       help="Larger sensitivity means smaller relative "
                       "peaks count as events.")
   parser.add_argument('--threshold', type=float, default=10.0,
