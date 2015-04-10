@@ -9,6 +9,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import librosa
 
+import audio_read
+
 from itertools import izip
 
 def vehicle_events_env(d, sr, smooth_time=1.0, n_fft=256):
@@ -96,8 +98,11 @@ def vehicle_find_peaks(env, frame_rate, peak_time_scale=1.0,
                           delta=delta, wait=min_sep_frames)
   ignore_frames = round(ignore_time * frame_rate)
   goodpeaks = np.nonzero((pks > ignore_frames) &
-                         (pks < (len(env) - ignore_frames)))
-  return pks[goodpeaks].astype(float)/frame_rate, env[pks[goodpeaks]]
+                         (pks < (len(env) - ignore_frames)))[0]
+  if goodpeaks.shape[0] == 0:
+    return np.zeros((0,)), np.zeros((0,))
+  else:
+    return pks[goodpeaks].astype(float)/frame_rate, env[pks[goodpeaks]]
 
 
 def events_for_file(filename, smooth_time=1.0, peak_time_scale=1.0,
@@ -114,8 +119,10 @@ def events_for_file(filename, smooth_time=1.0, peak_time_scale=1.0,
   all_peaks = []
   while not done:
     #print current_base_sec
-    d, sr = [d,sr] = librosa.load(filename, sr=sr, offset=current_base_sec,
-                                  duration=chunk_dur_sec)
+    d, sr = librosa.load(filename, sr=sr, offset=current_base_sec,
+                         duration=chunk_dur_sec)
+    #d, sr = audio_read.audio_read(filename, sr=sr, offset=current_base_sec,
+    #                              duration=chunk_dur_sec)
     print("Read %s @ time=%.1f ... %.1f" % (filename, current_base_sec,
                                             current_base_sec + len(d)/sr))
     if len(d) < np.floor(chunk_dur_sec*sr)-1:
