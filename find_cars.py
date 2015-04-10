@@ -9,8 +9,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import librosa
 
-import audio_read
-
 from itertools import izip
 
 def vehicle_events_env(d, sr, smooth_time=1.0, n_fft=256):
@@ -56,11 +54,12 @@ def vehicle_events_env(d, sr, smooth_time=1.0, n_fft=256):
   max_bin = int(max_freq_hz/sr * n_fft)
   env = np.sum(np.log(DS[min_bin:max_bin,]),axis=0)
   #plt.plot(env)
-  return env, smoo_frame_rate
+  return env - np.mean(env), smoo_frame_rate
 
 
 def vehicle_find_peaks(env, frame_rate, peak_time_scale=1.0,
-                       max_threshold=0.03, ignore_time=0.0):
+                       max_threshold=0.03, ignore_time=0.0,
+                       abs_threshold=0.0):
   """Pick peaks in detection envelope.
 
   :args:
@@ -76,6 +75,8 @@ def vehicle_find_peaks(env, frame_rate, peak_time_scale=1.0,
       ignored.
     ignore_time: float
       Optional "guard band": events this close to either end are ignored.
+    abs_threshold: float
+      Absolute threshold on peak value to be counted.
   :returns:
     times: np.array
       times in seconds of detected events
@@ -90,9 +91,10 @@ def vehicle_find_peaks(env, frame_rate, peak_time_scale=1.0,
   avg_win_frames = int(round(avg_win_sec * frame_rate))
   min_sep_frames = int(round(min_sep_sec * frame_rate))
   # Threshold for accepting a local max
-  delta = np.max(env) * max_threshold
+  #delta = np.max(env) * max_threshold
+  delta = max_threshold
   #print max_win_frames, avg_win_frames, min_sep_frames, delta
-  pks = librosa.peak_pick(np.maximum(0,env),
+  pks = librosa.peak_pick(np.maximum(abs_threshold, env),
                           pre_max=max_win_frames, post_max=max_win_frames,
                           pre_avg=avg_win_frames, post_avg=avg_win_frames,
                           delta=delta, wait=min_sep_frames)
@@ -106,15 +108,15 @@ def vehicle_find_peaks(env, frame_rate, peak_time_scale=1.0,
 
 
 def events_for_file(filename, smooth_time=1.0, peak_time_scale=1.0,
-                    sensitivity=30.0):
+                    sensitivity=30.0, threshold=10.0, ignore_edge_time=20.0):
   """ Return all the car events for a file, processing one chunk at a time """
   chunk_dur_sec = 1200.0
-  chunk_overlap_sec = 120.0
+  chunk_overlap_sec = min(120.0, 2.0*ignore_edge_time)
   current_base_sec = 0.0
   done = False
   sr = 16000
   # Ignore events close to edges, in case we happen to window right on a peak.
-  ignore_band_sec = 20.0
+  #ignore_edge_time = 20.0
   all_times = []
   all_peaks = []
   while not done:
@@ -129,9 +131,10 @@ def events_for_file(filename, smooth_time=1.0, peak_time_scale=1.0,
       done = True
     env, frame_rate = vehicle_events_env(d, sr, smooth_time=smooth_time)
     this_times, this_peaks = vehicle_find_peaks(env, frame_rate,
-                                                ignore_time=ignore_band_sec,
+                                                ignore_time=ignore_edge_time,
                                                 peak_time_scale=peak_time_scale,
-                                                max_threshold=1./sensitivity)
+                                                max_threshold=1./sensitivity,
+                                                abs_threshold=threshold)
     this_times += current_base_sec
     all_times = np.r_[all_times, this_times]
     all_peaks = np.r_[all_peaks, this_peaks]
@@ -174,8 +177,13 @@ def main(argv):
                       help="Scale the peak picking time windows by this "
                       "factor.")
   parser.add_argument('--sensitivity', type=float, default=30.0,
-                      help="Larger sensitivity means smaller peaks count "
-                      "as events.")
+                      help="Larger sensitivity means smaller relative "
+                      "peaks count as events.")
+  parser.add_argument('--threshold', type=float, default=10.0,
+                      help="Lower threshold allows absolutely quieter peaks "
+                      "to count as events.")
+  parser.add_argument('--ignore_edge_time', type=float, default=20.0,
+                      help="Ignore this many seconds at start and end.")
 
   args = parser.parse_args()
   input = args.input
@@ -184,7 +192,9 @@ def main(argv):
   times, peaks = events_for_file(
       input, smooth_time=args.smooth_time,
       peak_time_scale=args.peak_time_scale,
-      sensitivity=args.sensitivity)
+      sensitivity=args.sensitivity,
+      threshold=args.threshold,
+      ignore_edge_time=args.ignore_edge_time)
 
   write_label_file(output, times, times, ["%.2f" % peak for peak in peaks])
 
