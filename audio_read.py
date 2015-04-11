@@ -1,4 +1,29 @@
-"""audio_read reads in a whole audio file with resampling."""
+"""Reads in an audio file with resampling, all at once or in chunks.
+
+audio_read() reads in a whole soundfile at once (or chosen subregion).
+
+e.g.
+
+  d, sr = audio_read.audio_read(filename, sr=desired_sr,
+                                channels=desired_chans,
+                                offset=desired_start_time_sec,
+                                duration=desired_max_duration_sec)
+  # Returns d as an np.array (num_frames, num_channels)
+
+The AudioReader object allows you to incrementally walk through a
+sound file (useful for very long files).
+
+e.g.
+
+  reader = audio_read.AudioReader(filename, sr=sr, channels=1)
+  chunk_duration_seconds = 10.0
+  while not reader.done():
+    # Read the next chunk of samples.
+    d, sr = reader.read(chunk_duration_seconds)
+    # Process samples in d.
+    ...
+
+"""
 
 # Equivalent to:
 #import librosa
@@ -51,19 +76,26 @@ class AudioReader(object):
         self.filename = filename
         self.input_file = FFmpegAudioFile(os.path.realpath(filename),
                                           sample_rate=self.sr, channels=self.channels)
+        self.input_file_iterator = self.input_file.read_data()
         self.sr = self.input_file.sample_rate
         self.channels = self.input_file.channels
+        # ffmpeg also reports the duration if possible.
+        self.duration = self.input_file.duration
         self.start_sample = int(np.floor(self.sr * self.offset) * self.channels)
         if self.max_duration:
             self.last_sample = int(np.ceil(self.sr * self.max_duration) * self.channels)
         else:
             self.last_sample = None
-        if self.channels == 1:
-            self.saved_samples = np.zeros((0,))
-        else:
-            self.saved_samples = np.zeros((0, self.channels))
+        self.saved_samples = np.zeros((0,))
         self.sample_position = 0
         self.eof = False
+
+    def done(self):
+        return self.eof
+
+    def time(self):
+        # Return the current read position within the soundfile in seconds.
+        return float(self.sample_position)/(self.channels * self.sr)
 
     def read(self, duration=None):
         dtype = np.float32
@@ -76,24 +108,23 @@ class AudioReader(object):
             num_to_read = min(num_to_read, self.last_sample - self.sample_position)
         y = [self.saved_samples]
         num_read = self.saved_samples.shape[0]
-        if num_read < num_to_read and not self.eof:
-            early_end = False
-            for frame in self.input_file:
-                frame = buf_to_float(frame, dtype=dtype)
-                num_this_frame = len(frame)
-                self.sample_position += num_this_frame
-                if self.sample_position > self.start_sample:
-                    # First frame with valid samples - discard any before self.start_sample.
-                    num_this_frame = min(num_this_frame, self.sample_position - self.start_sample)
-                    frame = frame[-num_this_frame:]
-                    # tack on the current frame
-                    y.append(frame)
-                    num_read += num_this_frame
-                    if num_read >= num_to_read:
-                        early_end = True
-                        break
-            if not early_end:
+        while num_read < num_to_read and not self.eof:
+            try:
+                frame = buf_to_float(self.input_file_iterator.next(), dtype=dtype)
+            except StopIteration:
                 self.eof = True
+                break
+            num_this_frame = len(frame)
+            self.sample_position += num_this_frame
+            if self.sample_position > self.start_sample:
+                # First frame with valid samples - discard any before self.start_sample.
+                num_this_frame = min(num_this_frame, self.sample_position - self.start_sample)
+                frame = frame[-num_this_frame:]
+                # tack on the current frame
+                y.append(frame)
+                num_read += num_this_frame
+            if num_read >= num_to_read:
+                break
 
         if not len(y):
             # Zero-length read
